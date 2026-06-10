@@ -114,11 +114,13 @@
     cursor: pointer; border-radius: 6px;
   }
   .row:hover { background: rgba(255, 255, 255, .09); }
+  .row.selected { background: rgba(255, 255, 255, .16); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, .25); }
+  .row.wait { color: var(--muted); font-size: 11.5px; }
+  .row.wait .tm { font-weight: 500; }
   .row .tm { font-weight: 800; font-variant-numeric: tabular-nums; width: 40px; flex: none; }
   .row .rt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .row .du { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; flex: none; }
-  .row.bike { color: var(--bike); cursor: default; }
-  .row.bike:hover { background: none; }
+  .row.bike { color: var(--bike); }
   .row.arr { color: var(--muted); cursor: default; font-size: 11.5px; }
   .row.arr:hover { background: none; }
   .row.arr .tm { font-weight: 600; }
@@ -309,7 +311,7 @@ for (const [name, coords] of Object.entries(STATIONS)) {
   }).addTo(map).bindTooltip(name, { direction: 'top', offset: [0, -6] });
 }
 
-L.polyline([STATIONS[BIKE_HOP.from], STATIONS[BIKE_HOP.to]], {
+const bikeLayer = L.polyline([STATIONS[BIKE_HOP.from], STATIONS[BIKE_HOP.to]], {
   color: '#4ade80', weight: 3, dashArray: '4 6', opacity: 0.95,
 }).addTo(map).bindPopup(`<b>${BIKE_HOP.from} → ${BIKE_HOP.to}</b><br>🚴 by bike · ≈ ${BIKE_HOP.km} km across the Rhine`);
 
@@ -319,14 +321,18 @@ L.marker([58.537, 15.036], {
   icon: L.divIcon({ className: 'race-icon', html: '🚴', iconSize: [24, 24], iconAnchor: [12, 12] }),
 }).addTo(map).bindTooltip('Motala — start & finish', { direction: 'top', offset: [0, -10] });
 
-function fitMap() {
+function fitWithHud(bounds, maxZoom) {
   map.invalidateSize();
-  const bounds = L.latLngBounds([]);
-  for (const layer of legLayers) bounds.extend(layer.getBounds());
   const mobile = window.innerWidth <= 700;
   map.fitBounds(bounds, mobile
-    ? { paddingTopLeft: [16, 150], paddingBottomRight: [16, 215] }   // header on top, cards at bottom
-    : { paddingTopLeft: [365, 30], paddingBottomRight: [30, 30] });  // HUD rail on the left
+    ? { paddingTopLeft: [16, 150], paddingBottomRight: [16, 215], maxZoom }   // header on top, cards at bottom
+    : { paddingTopLeft: [365, 30], paddingBottomRight: [30, 30], maxZoom }); // HUD rail on the left
+}
+
+function fitMap() {
+  const bounds = L.latLngBounds([]);
+  for (const layer of legLayers) bounds.extend(layer.getBounds());
+  fitWithHud(bounds);
 }
 
 /* ---------------- HUD ---------------- */
@@ -334,12 +340,12 @@ function fitMap() {
 (function renderChips() {
   const trainMin = LEGS.reduce((sum, leg) => sum + legMinutes(leg), 0);
   const km = LEGS.reduce((sum, leg) => sum + legKm(leg), 0);
-  const cost = LEGS.reduce((sum, leg) => sum + leg.price, 0) + INTERRAIL_PASS;
+  const seats = LEGS.reduce((sum, leg) => sum + leg.price, 0);
   document.getElementById('chips').innerHTML = [
     `<b>${LEGS.length}</b> trains`,
     `<b>${fmtDur(trainMin)}</b> on rails`,
     `≈ <b>${km.toLocaleString('en')}</b> km`,
-    `<b>${euro(cost)}</b> · Interrail pass + seats`,
+    `<b>${euro(seats + INTERRAIL_PASS)}</b> · €${INTERRAIL_PASS} Interrail pass + ${euro(seats)} seats`,
   ].map((chip) => `<span class="chip">${chip}</span>`).join('');
 })();
 
@@ -349,16 +355,21 @@ function renderDirCard(elementId, dir, title) {
   const lastLeg = legs[legs.length - 1];
 
   let rows = '';
+  let prevLeg = null;
   for (const leg of legs) {
-    // The unbooked Rhine crossing sits between the Offenburg arrival and the Strasbourg departure.
-    if (leg.from === BIKE_HOP.to) {
-      rows += `<div class="row bike"><span class="tm">🚴</span>` +
-        `<span class="rt">${BIKE_HOP.from} → ${BIKE_HOP.to}</span><span class="du">≈ ${BIKE_HOP.km} km</span></div>`;
+    if (prevLeg && prevLeg.to === leg.from) {
+      rows += `<div class="row wait" data-wait="${leg.from}" data-dur="${fmtDur(minutesBetween(prevLeg.arr, leg.dep))}">` +
+        `<span class="tm">⏱</span><span class="rt">${fmtDur(minutesBetween(prevLeg.arr, leg.dep))} layover</span><span class="du"></span></div>`;
+    } else if (prevLeg) {
+      // The unbooked Rhine crossing sits between the Offenburg arrival and the Strasbourg departure.
+      rows += `<div class="row bike" data-bike>` +
+        `<span class="tm">🚴</span><span class="rt">${BIKE_HOP.from} → ${BIKE_HOP.to}</span><span class="du">≈ ${BIKE_HOP.km} km</span></div>`;
     }
     rows += `<div class="row" data-leg="${LEGS.indexOf(leg)}">` +
       `<span class="tm">${fmtTime(leg.dep)}</span>` +
       `<span class="rt">${shortName(leg.from)} → ${shortName(leg.to)}${crossesMidnight(leg) ? ' 🌙' : ''}</span>` +
       `<span class="du">${fmtDur(legMinutes(leg))}</span></div>`;
+    prevLeg = leg;
   }
   rows += `<div class="row arr"><span class="tm">${fmtTime(lastLeg.arr)}</span>` +
     `<span class="rt">arrival ${shortName(lastLeg.to)}</span><span class="du">${fmtDur(doorToDoor)} door-to-door</span></div>`;
@@ -369,9 +380,64 @@ function renderDirCard(elementId, dir, title) {
 renderDirCard('out-card', 'out', 'Outbound · Wed 10 – Thu 11 Jun');
 renderDirCard('ret-card', 'ret', 'Return · Mon 22 – Tue 23 Jun');
 
-// Clicking a leg row opens its popup on the map.
+/* ---------------- selection: click a row to highlight it on the map ---------------- */
+
+let selectedRow = null;
+
+function clearSelection() {
+  if (selectedRow) selectedRow.classList.remove('selected');
+  selectedRow = null;
+  map.closePopup();
+  legLayers.forEach((layer) => layer.setStyle({ opacity: 0.95, weight: 4 }));
+  bikeLayer.setStyle({ opacity: 0.95, weight: 3 });
+}
+
+// Toggles: re-clicking the selected row (or clicking the map) restores the full view.
+function toggleSelection(row, apply) {
+  if (selectedRow === row) { clearSelection(); fitMap(); return; }
+  clearSelection();
+  selectedRow = row;
+  row.classList.add('selected');
+  apply();
+}
+
+function dimAll() {
+  legLayers.forEach((layer) => layer.setStyle({ opacity: 0.12, weight: 3 }));
+  bikeLayer.setStyle({ opacity: 0.12 });
+}
+
 document.querySelectorAll('.row[data-leg]').forEach((row) => {
-  row.addEventListener('click', () => legLayers[Number(row.dataset.leg)].openPopup());
+  const layer = legLayers[Number(row.dataset.leg)];
+  row.addEventListener('click', () => toggleSelection(row, () => {
+    dimAll();
+    layer.setStyle({ opacity: 1, weight: 6 });
+    fitWithHud(layer.getBounds(), 8);
+    layer.openPopup();
+  }));
+});
+
+document.querySelectorAll('.row[data-wait]').forEach((row) => {
+  const station = row.dataset.wait;
+  row.addEventListener('click', () => toggleSelection(row, () => {
+    dimAll();
+    fitWithHud(L.latLngBounds([STATIONS[station]]), 8);
+    L.popup().setLatLng(STATIONS[station])
+      .setContent(`⏱ <b>${row.dataset.dur}</b> layover · ${station}`)
+      .openOn(map);
+  }));
+});
+
+document.querySelectorAll('.row[data-bike]').forEach((row) => {
+  row.addEventListener('click', () => toggleSelection(row, () => {
+    dimAll();
+    bikeLayer.setStyle({ opacity: 1, weight: 5 });
+    fitWithHud(bikeLayer.getBounds(), 10);
+    bikeLayer.openPopup();
+  }));
+});
+
+map.on('click', () => {
+  if (selectedRow) { clearSelection(); fitMap(); }
 });
 
 fitMap();
