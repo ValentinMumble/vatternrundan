@@ -2,11 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Nantes → Stockholm · Vätternrundan 2026</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0b1220;
@@ -24,21 +22,46 @@
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
     overflow: hidden;
+    -webkit-font-smoothing: antialiased;
   }
 
   #map { position: fixed; inset: 0; z-index: 0; background: var(--bg); }
 
   .card {
-    background: var(--card);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 12px 14px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, .35);
+    position: relative;
+    background: rgba(30, 34, 44, .4);
+    /* glass brightens and saturates what's behind it, not just blurs */
+    backdrop-filter: blur(28px) saturate(180%) brightness(1.12);
+    -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.12);
+    border-radius: 28px;
+    padding: 14px 16px;
+    box-shadow:
+      0 1px 1px rgba(0, 0, 0, .2),
+      0 16px 40px rgba(0, 0, 0, .45),
+      inset 0 1px 1px rgba(255, 255, 255, .15);
     pointer-events: auto;
+  }
+  .card::after {
+    /* gradient specular rim — bright where light hits, dim on the shadow side */
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    padding: 1.2px;
+    background: linear-gradient(135deg,
+      rgba(255, 255, 255, .42),
+      rgba(255, 255, 255, .12) 30%,
+      rgba(255, 255, 255, .03) 50%,
+      rgba(255, 255, 255, .10) 72%,
+      rgba(255, 255, 255, .32));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+  }
+  .card::before {
+    /* overhead glare */
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: radial-gradient(120% 65% at 50% -20%, rgba(255, 255, 255, .1), rgba(255, 255, 255, 0) 60%);
   }
 
   .hud-top {
@@ -54,20 +77,23 @@
   /* ---------- header card ---------- */
   .kicker {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    font-size: 12px; font-weight: 600; letter-spacing: -0.01em;
+    white-space: nowrap;
     color: var(--race);
-    background: rgba(250, 204, 21, .1);
-    border: 1px solid rgba(250, 204, 21, .3);
-    padding: 4px 10px; border-radius: 999px; margin-bottom: 8px;
+    background: rgba(250, 204, 21, .12);
+    border: 0.5px solid rgba(250, 204, 21, .35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+    padding: 4px 11px; border-radius: 999px; margin-bottom: 8px;
   }
   h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
   h1 span { color: var(--out); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .chip {
     font-size: 11.5px; font-weight: 600; color: var(--text);
-    background: rgba(141, 162, 192, .12);
-    border: 1px solid var(--line);
-    padding: 3px 9px; border-radius: 999px;
+    background: rgba(255, 255, 255, .1);
+    border: 0.5px solid rgba(255, 255, 255, .22);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, .2), 0 1px 2px rgba(0, 0, 0, .15);
+    padding: 3px 10px; border-radius: 999px;
     white-space: nowrap;
   }
   .chip b { font-weight: 800; }
@@ -75,10 +101,10 @@
   /* ---------- direction cards ---------- */
   .dir-card h2 {
     display: flex; justify-content: space-between; align-items: baseline;
-    font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+    font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
     margin-bottom: 7px;
   }
-  .dir-card h2 small { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; }
+  .dir-card h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
   .dir-card.out h2 { color: var(--out); }
   .dir-card.ret h2 { color: var(--ret); }
 
@@ -87,7 +113,7 @@
     font-size: 12.5px; padding: 2.5px 0;
     cursor: pointer; border-radius: 6px;
   }
-  .row:hover { background: rgba(141, 162, 192, .1); }
+  .row:hover { background: rgba(255, 255, 255, .09); }
   .row .tm { font-weight: 800; font-variant-numeric: tabular-nums; width: 40px; flex: none; }
   .row .rt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .row .du { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; flex: none; }
@@ -99,7 +125,16 @@
 
   /* ---------- map bits ---------- */
   .leaflet-container { font-family: 'Inter', sans-serif; }
-  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1b2845; color: var(--text); }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background: rgba(30, 34, 44, .5); color: var(--text);
+    backdrop-filter: blur(28px) saturate(180%) brightness(1.12);
+    -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.12);
+  }
+  .leaflet-popup-content-wrapper {
+    border: 0.5px solid rgba(255, 255, 255, .22);
+    border-radius: 18px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .4), inset 0 1px 1px rgba(255, 255, 255, .2);
+  }
   .leaflet-popup-content { font-size: 13px; }
   .leaflet-control-zoom { display: none; }
   .leaflet-control-attribution { background: rgba(11, 18, 32, .7) !important; color: var(--muted) !important; font-size: 9px !important; }
@@ -121,13 +156,17 @@
     .chips { margin-top: 7px; }
     .chip { font-size: 10.5px; padding: 2px 8px; }
     .hud-bottom {
-      left: 0; right: 0; bottom: 10px; width: auto;
+      left: 0; right: 0; width: auto;
+      bottom: calc(10px + env(safe-area-inset-bottom));
       flex-direction: row; gap: 8px;
       overflow-x: auto; -webkit-overflow-scrolling: touch;
       padding: 0 10px;
       scroll-snap-type: x mandatory;
+      pointer-events: auto; /* the container itself must receive touches to scroll on iOS */
+      touch-action: pan-x;
     }
-    .dir-card { min-width: 272px; flex: none; scroll-snap-align: start; }
+    .dir-card { min-width: 276px; flex: none; scroll-snap-align: center; }
+    .hud-top { top: calc(10px + env(safe-area-inset-top)); }
     .row { font-size: 12px; }
   }
 </style>
@@ -139,7 +178,7 @@
 <div class="hud-top">
   <div class="card">
     <div class="kicker">🚴 Vätternrundan · 315 km · Sat 13 · 05:00</div>
-    <h1>Nantes <span>⇄</span> Stockholm</h1>
+    <h1>Nantes <span>⇄</span> Stockholm 🇸🇪</h1>
     <div class="chips" id="chips"></div>
   </div>
 </div>
@@ -300,7 +339,7 @@ function fitMap() {
     `<b>${LEGS.length}</b> trains`,
     `<b>${fmtDur(trainMin)}</b> on rails`,
     `≈ <b>${km.toLocaleString('en')}</b> km`,
-    `<b>${euro(cost)}</b> all-in`,
+    `<b>${euro(cost)}</b> · Interrail pass + seats`,
   ].map((chip) => `<span class="chip">${chip}</span>`).join('');
 })();
 
