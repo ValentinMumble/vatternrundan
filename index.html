@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nantes → Stockholm · Vätternrundan 2026</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b1220;
+    --card: rgba(17, 26, 46, .88);
+    --line: #2a3a5c;
+    --text: #e8eefb;
+    --muted: #8da2c0;
+    --out: #2dd4bf;
+    --ret: #fb923c;
+    --race: #facc15;
+    --bike: #4ade80;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+  }
+
+  #map { position: fixed; inset: 0; z-index: 0; background: var(--bg); }
+
+  .card {
+    background: var(--card);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 14px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .35);
+    pointer-events: auto;
+  }
+
+  .hud-top {
+    position: fixed; top: 12px; left: 12px; z-index: 1000;
+    width: 330px; pointer-events: none;
+  }
+  .hud-bottom {
+    position: fixed; bottom: 12px; left: 12px; z-index: 1000;
+    width: 330px; display: flex; flex-direction: column; gap: 10px;
+    pointer-events: none;
+  }
+
+  /* ---------- header card ---------- */
+  .kicker {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--race);
+    background: rgba(250, 204, 21, .1);
+    border: 1px solid rgba(250, 204, 21, .3);
+    padding: 4px 10px; border-radius: 999px; margin-bottom: 8px;
+  }
+  h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+  h1 span { color: var(--out); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    font-size: 11.5px; font-weight: 600; color: var(--text);
+    background: rgba(141, 162, 192, .12);
+    border: 1px solid var(--line);
+    padding: 3px 9px; border-radius: 999px;
+    white-space: nowrap;
+  }
+  .chip b { font-weight: 800; }
+
+  /* ---------- direction cards ---------- */
+  .dir-card h2 {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+    margin-bottom: 7px;
+  }
+  .dir-card h2 small { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; }
+  .dir-card.out h2 { color: var(--out); }
+  .dir-card.ret h2 { color: var(--ret); }
+
+  .row {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 12.5px; padding: 2.5px 0;
+    cursor: pointer; border-radius: 6px;
+  }
+  .row:hover { background: rgba(141, 162, 192, .1); }
+  .row .tm { font-weight: 800; font-variant-numeric: tabular-nums; width: 40px; flex: none; }
+  .row .rt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .row .du { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; flex: none; }
+  .row.bike { color: var(--bike); cursor: default; }
+  .row.bike:hover { background: none; }
+  .row.arr { color: var(--muted); cursor: default; font-size: 11.5px; }
+  .row.arr:hover { background: none; }
+  .row.arr .tm { font-weight: 600; }
+
+  /* ---------- map bits ---------- */
+  .leaflet-container { font-family: 'Inter', sans-serif; }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1b2845; color: var(--text); }
+  .leaflet-popup-content { font-size: 13px; }
+  .leaflet-control-zoom { display: none; }
+  .leaflet-control-attribution { background: rgba(11, 18, 32, .7) !important; color: var(--muted) !important; font-size: 9px !important; }
+  .leaflet-control-attribution a { color: var(--muted) !important; }
+  .station-dot { background: transparent; }
+  .station-dot span {
+    display: block; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--text); border: 2px solid var(--bg);
+    box-shadow: 0 0 0 2px rgba(232, 238, 251, .35);
+  }
+  .race-icon { font-size: 22px; line-height: 1; filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); }
+
+  /* ---------- mobile ---------- */
+  @media (max-width: 700px) {
+    .hud-top { left: 10px; right: 10px; width: auto; }
+    .hud-top .card { padding: 10px 12px; }
+    h1 { font-size: 18px; }
+    .kicker { font-size: 9.5px; padding: 3px 8px; margin-bottom: 6px; }
+    .chips { margin-top: 7px; }
+    .chip { font-size: 10.5px; padding: 2px 8px; }
+    .hud-bottom {
+      left: 0; right: 0; bottom: 10px; width: auto;
+      flex-direction: row; gap: 8px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      padding: 0 10px;
+      scroll-snap-type: x mandatory;
+    }
+    .dir-card { min-width: 272px; flex: none; scroll-snap-align: start; }
+    .row { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="hud-top">
+  <div class="card">
+    <div class="kicker">🚴 Vätternrundan · 315 km · Sat 13 · 05:00</div>
+    <h1>Nantes <span>⇄</span> Stockholm</h1>
+    <div class="chips" id="chips"></div>
+  </div>
+</div>
+
+<div class="hud-bottom">
+  <div class="card dir-card out" id="out-card"></div>
+  <div class="card dir-card ret" id="ret-card"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+'use strict';
+
+/* ---------------- data ---------------- */
+
+const STATIONS = {
+  'Nantes':            [47.2175, -1.5419],
+  'Bruxelles-Midi':    [50.8354,  4.3369],
+  'Köln Hbf':          [50.9430,  6.9583],
+  'Hamburg Hbf':       [53.5527, 10.0065],
+  'Malmö C':           [55.6093, 13.0007],
+  'Stockholm Central': [59.3301, 18.0573],
+  'Offenburg':         [48.4766,  7.9468],
+  'Strasbourg':        [48.5850,  7.7349],
+};
+
+// Via points so polylines roughly follow real rail corridors.
+const LEGS = [
+  { dir: 'out', from: 'Nantes', to: 'Bruxelles-Midi',
+    dep: '2026-06-10T05:59', arr: '2026-06-10T11:01', price: 22.00,
+    via: [[47.99, 0.19], [48.73, 2.26], [50.64, 3.07]] },                      // Le Mans · Massy · Lille
+  { dir: 'out', from: 'Bruxelles-Midi', to: 'Köln Hbf',
+    dep: '2026-06-10T12:25', arr: '2026-06-10T14:15', price: 8.00,
+    via: [[50.62, 5.57], [50.77, 6.09]] },                                     // Liège · Aachen
+  { dir: 'out', from: 'Köln Hbf', to: 'Hamburg Hbf',
+    dep: '2026-06-10T15:11', arr: '2026-06-10T19:32', price: 8.00,
+    via: [[51.52, 7.46], [51.96, 7.63], [53.08, 8.81]] },                      // Dortmund · Münster · Bremen
+  { dir: 'out', from: 'Hamburg Hbf', to: 'Malmö C',
+    dep: '2026-06-10T21:53', arr: '2026-06-11T04:30', price: 38.60,
+    via: [[54.79, 9.44], [55.40, 10.39], [55.67, 12.57]] },                    // Padborg · Odense · Copenhagen
+  { dir: 'out', from: 'Malmö C', to: 'Stockholm Central',
+    dep: '2026-06-11T05:07', arr: '2026-06-11T10:25', price: 8.20,
+    via: [[56.90, 14.55], [58.59, 16.18]] },                                   // Alvesta · Norrköping
+  { dir: 'ret', from: 'Stockholm Central', to: 'Hamburg Hbf',
+    dep: '2026-06-22T17:28', arr: '2026-06-23T05:53', price: 20.40,
+    via: [[58.59, 16.18], [56.90, 14.55], [55.61, 13.00], [55.67, 12.57], [55.40, 10.39], [54.79, 9.44]] },
+  { dir: 'ret', from: 'Hamburg Hbf', to: 'Offenburg',
+    dep: '2026-06-23T07:44', arr: '2026-06-23T13:58', price: 8.00,
+    via: [[52.38, 9.74], [50.107, 8.66], [49.01, 8.40]] },                     // Hannover · Frankfurt · Karlsruhe
+  { dir: 'ret', from: 'Strasbourg', to: 'Nantes',
+    dep: '2026-06-23T17:01', arr: '2026-06-23T22:23', price: 12.00,
+    via: [[48.73, 2.26], [47.99, 0.19], [47.46, -0.55]] },                     // Massy · Le Mans · Angers
+];
+
+// Rough Vätternrundan loop (counterclockwise from Motala).
+const RACE_LOOP = [
+  [58.537, 15.036], [58.448, 14.890], [58.227, 14.652], [58.025, 14.467],
+  [57.781, 14.156], [57.910, 14.070], [58.170, 14.137], [58.300, 14.290],
+  [58.540, 14.510], [58.879, 14.902], [58.700, 15.050], [58.537, 15.036],
+];
+
+const INTERRAIL_PASS = 240;
+const BIKE_HOP = { from: 'Offenburg', to: 'Strasbourg', km: 26 };
+
+/* ---------------- helpers ---------------- */
+
+const MS_MIN = 60000;
+const dateOf = (iso) => new Date(iso);
+const minutesBetween = (aIso, bIso) => Math.round((dateOf(bIso) - dateOf(aIso)) / MS_MIN);
+
+function fmtDur(min) {
+  const hours = Math.floor(min / 60);
+  const mins = min % 60;
+  if (hours === 0) return `${mins}m`;
+  return mins === 0 ? `${hours}h` : `${hours}h${String(mins).padStart(2, '0')}`;
+}
+function fmtTime(iso) { return iso.slice(11, 16); }
+function crossesMidnight(leg) { return leg.dep.slice(0, 10) !== leg.arr.slice(0, 10); }
+const shortName = (station) => station.replace(/ (Hbf|C|Central)$/, '').replace('-Midi', '');
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const toRad = (deg) => deg * Math.PI / 180;
+  const dLat = toRad(b[0] - a[0]);
+  const dLon = toRad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function legPath(leg) { return [STATIONS[leg.from], ...(leg.via || []), STATIONS[leg.to]]; }
+function legKm(leg) {
+  const path = legPath(leg);
+  let km = 0;
+  for (let idx = 1; idx < path.length; idx++) km += haversineKm(path[idx - 1], path[idx]);
+  return Math.round(km);
+}
+function legMinutes(leg) { return minutesBetween(leg.dep, leg.arr); }
+const euro = (value) => `€${value.toFixed(2)}`;
+
+/* ---------------- map ---------------- */
+
+const map = L.map('map', { scrollWheelZoom: true, zoomControl: false });
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains: 'abcd', maxZoom: 18,
+}).addTo(map);
+
+const DIR_COLOR = { out: '#2dd4bf', ret: '#fb923c' };
+const legLayers = [];
+
+for (const leg of LEGS) {
+  const layer = L.polyline(legPath(leg), {
+    color: DIR_COLOR[leg.dir], weight: 4, opacity: 0.95,
+    lineCap: 'round', lineJoin: 'round',
+    dashArray: leg.dir === 'ret' ? '10 9' : null, // keep outbound visible on shared corridors
+  }).addTo(map);
+  layer.bindPopup(
+    `<b>${leg.from} → ${leg.to}</b><br>` +
+    `${fmtTime(leg.dep)} → ${fmtTime(leg.arr)}${crossesMidnight(leg) ? ' (+1)' : ''} · ${fmtDur(legMinutes(leg))}<br>` +
+    `≈ ${legKm(leg)} km · ${euro(leg.price)}`
+  );
+  legLayers.push(layer);
+}
+
+for (const [name, coords] of Object.entries(STATIONS)) {
+  L.marker(coords, {
+    icon: L.divIcon({ className: 'station-dot', html: '<span></span>', iconSize: [9, 9], iconAnchor: [5, 5] }),
+  }).addTo(map).bindTooltip(name, { direction: 'top', offset: [0, -6] });
+}
+
+L.polyline([STATIONS[BIKE_HOP.from], STATIONS[BIKE_HOP.to]], {
+  color: '#4ade80', weight: 3, dashArray: '4 6', opacity: 0.95,
+}).addTo(map).bindPopup(`<b>${BIKE_HOP.from} → ${BIKE_HOP.to}</b><br>🚴 by bike · ≈ ${BIKE_HOP.km} km across the Rhine`);
+
+L.polyline(RACE_LOOP, { color: '#facc15', weight: 3, dashArray: '6 7', opacity: 0.9 }).addTo(map)
+  .bindPopup('<b>Vätternrundan</b><br>315 km around Lake Vättern 🚴<br>Sat 13 June · 05:00 start');
+L.marker([58.537, 15.036], {
+  icon: L.divIcon({ className: 'race-icon', html: '🚴', iconSize: [24, 24], iconAnchor: [12, 12] }),
+}).addTo(map).bindTooltip('Motala — start & finish', { direction: 'top', offset: [0, -10] });
+
+function fitMap() {
+  map.invalidateSize();
+  const bounds = L.latLngBounds([]);
+  for (const layer of legLayers) bounds.extend(layer.getBounds());
+  const mobile = window.innerWidth <= 700;
+  map.fitBounds(bounds, mobile
+    ? { paddingTopLeft: [16, 150], paddingBottomRight: [16, 215] }   // header on top, cards at bottom
+    : { paddingTopLeft: [365, 30], paddingBottomRight: [30, 30] });  // HUD rail on the left
+}
+
+/* ---------------- HUD ---------------- */
+
+(function renderChips() {
+  const trainMin = LEGS.reduce((sum, leg) => sum + legMinutes(leg), 0);
+  const km = LEGS.reduce((sum, leg) => sum + legKm(leg), 0);
+  const cost = LEGS.reduce((sum, leg) => sum + leg.price, 0) + INTERRAIL_PASS;
+  document.getElementById('chips').innerHTML = [
+    `<b>${LEGS.length}</b> trains`,
+    `<b>${fmtDur(trainMin)}</b> on rails`,
+    `≈ <b>${km.toLocaleString('en')}</b> km`,
+    `<b>${euro(cost)}</b> all-in`,
+  ].map((chip) => `<span class="chip">${chip}</span>`).join('');
+})();
+
+function renderDirCard(elementId, dir, title) {
+  const legs = LEGS.filter((leg) => leg.dir === dir);
+  const doorToDoor = minutesBetween(legs[0].dep, legs[legs.length - 1].arr);
+  const lastLeg = legs[legs.length - 1];
+
+  let rows = '';
+  for (const leg of legs) {
+    // The unbooked Rhine crossing sits between the Offenburg arrival and the Strasbourg departure.
+    if (leg.from === BIKE_HOP.to) {
+      rows += `<div class="row bike"><span class="tm">🚴</span>` +
+        `<span class="rt">${BIKE_HOP.from} → ${BIKE_HOP.to}</span><span class="du">≈ ${BIKE_HOP.km} km</span></div>`;
+    }
+    rows += `<div class="row" data-leg="${LEGS.indexOf(leg)}">` +
+      `<span class="tm">${fmtTime(leg.dep)}</span>` +
+      `<span class="rt">${shortName(leg.from)} → ${shortName(leg.to)}${crossesMidnight(leg) ? ' 🌙' : ''}</span>` +
+      `<span class="du">${fmtDur(legMinutes(leg))}</span></div>`;
+  }
+  rows += `<div class="row arr"><span class="tm">${fmtTime(lastLeg.arr)}</span>` +
+    `<span class="rt">arrival ${shortName(lastLeg.to)}</span><span class="du">${fmtDur(doorToDoor)} door-to-door</span></div>`;
+
+  document.getElementById(elementId).innerHTML = `<h2>${title}<small>${fmtDur(doorToDoor)}</small></h2>${rows}`;
+}
+
+renderDirCard('out-card', 'out', 'Outbound · Wed 10 – Thu 11 Jun');
+renderDirCard('ret-card', 'ret', 'Return · Mon 22 – Tue 23 Jun');
+
+// Clicking a leg row opens its popup on the map.
+document.querySelectorAll('.row[data-leg]').forEach((row) => {
+  row.addEventListener('click', () => legLayers[Number(row.dataset.leg)].openPopup());
+});
+
+fitMap();
+window.addEventListener('load', fitMap);
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(fitMap, 200);
+});
+</script>
+</body>
+</html>
