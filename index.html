@@ -102,17 +102,40 @@
   .dir-card h2 {
     display: flex; justify-content: space-between; align-items: baseline;
     font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
-    margin-bottom: 7px;
+    cursor: pointer; border-radius: 8px;
+    padding: 2px 6px; margin: -2px -6px 5px;
   }
+  .dir-card h2:hover { background: rgba(255, 255, 255, .09); }
+  .dir-card h2.selected { background: rgba(255, 255, 255, .16); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, .25); }
   .dir-card h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
   .dir-card.out h2 { color: var(--out); }
   .dir-card.ret h2 { color: var(--ret); }
 
+  /* emphasis when a selection lives inside this card */
+  .dir-card { transition: opacity .25s ease, transform .25s ease; }
+  .dir-card.faded { opacity: .45; }
+  .dir-card.focus { transform: scale(1.02); }
+  .dir-card.out.focus { box-shadow: 0 0 0 1.5px rgba(45, 212, 191, .55), 0 1px 1px rgba(0, 0, 0, .2), 0 16px 40px rgba(0, 0, 0, .45), inset 0 1px 1px rgba(255, 255, 255, .15); }
+  .dir-card.ret.focus { box-shadow: 0 0 0 1.5px rgba(251, 146, 60, .55), 0 1px 1px rgba(0, 0, 0, .2), 0 16px 40px rgba(0, 0, 0, .45), inset 0 1px 1px rgba(255, 255, 255, .15); }
+
+  /* per-direction stats, revealed when the whole direction is focused */
+  .dir-stats { display: none; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 2px 0 8px; }
+  .dir-card.focus-dir .dir-stats { display: grid; }
+  .dir-stats div {
+    background: rgba(255, 255, 255, .08);
+    border: 0.5px solid rgba(255, 255, 255, .14);
+    border-radius: 10px; padding: 5px 8px;
+  }
+  .dir-stats b { display: block; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .dir-stats span { font-size: 9.5px; color: var(--muted); }
+
   .row {
-    display: flex; align-items: baseline; gap: 8px;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px;
     font-size: 12.5px; padding: 2.5px 0;
     cursor: pointer; border-radius: 6px;
   }
+  .row .dt { display: none; flex-basis: 100%; font-size: 10.5px; color: var(--muted); padding-left: 48px; }
+  .row.selected .dt { display: block; }
   .row:hover { background: rgba(255, 255, 255, .09); }
   .row.selected { background: rgba(255, 255, 255, .16); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, .25); }
   .row.wait { color: var(--muted); font-size: 11.5px; }
@@ -363,18 +386,32 @@ function renderDirCard(elementId, dir, title) {
     } else if (prevLeg) {
       // The unbooked Rhine crossing sits between the Offenburg arrival and the Strasbourg departure.
       rows += `<div class="row bike" data-bike>` +
-        `<span class="tm">🚴</span><span class="rt">${BIKE_HOP.from} → ${BIKE_HOP.to}</span><span class="du">≈ ${BIKE_HOP.km} km</span></div>`;
+        `<span class="tm">🚴</span><span class="rt">${BIKE_HOP.from} → ${BIKE_HOP.to}</span><span class="du">≈ ${BIKE_HOP.km} km</span>` +
+        `<span class="dt">window ${fmtTime(prevLeg.arr)} → ${fmtTime(leg.dep)} · own pace across the Rhine</span></div>`;
     }
     rows += `<div class="row" data-leg="${LEGS.indexOf(leg)}">` +
       `<span class="tm">${fmtTime(leg.dep)}</span>` +
       `<span class="rt">${shortName(leg.from)} → ${shortName(leg.to)}${crossesMidnight(leg) ? ' 🌙' : ''}</span>` +
-      `<span class="du">${fmtDur(legMinutes(leg))}</span></div>`;
+      `<span class="du">${fmtDur(legMinutes(leg))}</span>` +
+      `<span class="dt">≈ ${legKm(leg)} km · ${euro(leg.price)} · arrives ${fmtTime(leg.arr)}${crossesMidnight(leg) ? ' (+1)' : ''}</span></div>`;
     prevLeg = leg;
   }
   rows += `<div class="row arr"><span class="tm">${fmtTime(lastLeg.arr)}</span>` +
     `<span class="rt">arrival ${shortName(lastLeg.to)}</span><span class="du">${fmtDur(doorToDoor)} door-to-door</span></div>`;
 
-  document.getElementById(elementId).innerHTML = `<h2>${title}<small>${fmtDur(doorToDoor)}</small></h2>${rows}`;
+  const trainMin = legs.reduce((sum, leg) => sum + legMinutes(leg), 0);
+  const km = legs.reduce((sum, leg) => sum + legKm(leg), 0);
+  const seats = legs.reduce((sum, leg) => sum + leg.price, 0);
+  const stats =
+    `<div class="dir-stats">` +
+    `<div><b>${fmtDur(trainMin)}</b><span>on trains</span></div>` +
+    `<div><b>${fmtDur(doorToDoor - trainMin)}</b><span>waiting</span></div>` +
+    `<div><b>≈ ${km.toLocaleString('en')} km</b><span>distance</span></div>` +
+    `<div><b>${euro(seats)}</b><span>seats</span></div>` +
+    `</div>`;
+
+  document.getElementById(elementId).innerHTML =
+    `<h2 data-dir="${dir}">${title}<small>${fmtDur(doorToDoor)}</small></h2>${stats}${rows}`;
 }
 
 renderDirCard('out-card', 'out', 'Outbound · Wed 10 – Thu 11 Jun');
@@ -390,6 +427,7 @@ function clearSelection() {
   map.closePopup();
   legLayers.forEach((layer) => layer.setStyle({ opacity: 0.95, weight: 4 }));
   bikeLayer.setStyle({ opacity: 0.95, weight: 3 });
+  document.querySelectorAll('.dir-card').forEach((card) => card.classList.remove('faded', 'focus', 'focus-dir'));
 }
 
 // Toggles: re-clicking the selected row (or clicking the map) restores the full view.
@@ -398,6 +436,10 @@ function toggleSelection(row, apply) {
   clearSelection();
   selectedRow = row;
   row.classList.add('selected');
+  const card = row.closest('.dir-card');
+  document.querySelectorAll('.dir-card').forEach((other) => other.classList.toggle('faded', other !== card));
+  card.classList.add('focus');
+  if (row.tagName === 'H2') card.classList.add('focus-dir');
   apply();
 }
 
@@ -433,6 +475,22 @@ document.querySelectorAll('.row[data-bike]').forEach((row) => {
     bikeLayer.setStyle({ opacity: 1, weight: 5 });
     fitWithHud(bikeLayer.getBounds(), 10);
     bikeLayer.openPopup();
+  }));
+});
+
+// Clicking a card header focuses the whole direction (the bike hop belongs to the return).
+document.querySelectorAll('.dir-card h2[data-dir]').forEach((header) => {
+  const dir = header.dataset.dir;
+  header.addEventListener('click', () => toggleSelection(header, () => {
+    const bounds = L.latLngBounds([]);
+    legLayers.forEach((layer, index) => {
+      const active = LEGS[index].dir === dir;
+      layer.setStyle({ opacity: active ? 0.95 : 0.12, weight: 4 });
+      if (active) bounds.extend(layer.getBounds());
+    });
+    bikeLayer.setStyle({ opacity: dir === 'ret' ? 0.95 : 0.12 });
+    if (dir === 'ret') bounds.extend(bikeLayer.getBounds());
+    fitWithHud(bounds);
   }));
 });
 
