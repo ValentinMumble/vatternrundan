@@ -18,7 +18,6 @@ struct ContentView: View {
             }
             .padding(.horizontal, 12)
         }
-        .preferredColorScheme(.dark)
     }
 
     private var bottomCards: some View {
