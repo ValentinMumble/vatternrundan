@@ -111,12 +111,11 @@
   .dir-card.out h2 { color: var(--out); }
   .dir-card.ret h2 { color: var(--ret); }
 
-  /* emphasis when a selection lives inside this card */
-  .dir-card { transition: opacity .25s ease, transform .25s ease; }
+  /* emphasis when a selection lives inside this card — outline ring keeps the glass layers untouched */
+  .dir-card { transition: opacity .25s ease; outline: 0 solid transparent; }
   .dir-card.faded { opacity: .45; }
-  .dir-card.focus { transform: scale(1.02); }
-  .dir-card.out.focus { box-shadow: 0 0 0 1.5px rgba(45, 212, 191, .55), 0 1px 1px rgba(0, 0, 0, .2), 0 16px 40px rgba(0, 0, 0, .45), inset 0 1px 1px rgba(255, 255, 255, .15); }
-  .dir-card.ret.focus { box-shadow: 0 0 0 1.5px rgba(251, 146, 60, .55), 0 1px 1px rgba(0, 0, 0, .2), 0 16px 40px rgba(0, 0, 0, .45), inset 0 1px 1px rgba(255, 255, 255, .15); }
+  .dir-card.out.focus { outline: 1.5px solid rgba(45, 212, 191, .6); }
+  .dir-card.ret.focus { outline: 1.5px solid rgba(251, 146, 60, .6); }
 
   /* per-direction stats, revealed when the whole direction is focused */
   .dir-stats { display: none; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 2px 0 8px; }
@@ -360,17 +359,23 @@ function fitMap() {
 
 /* ---------------- HUD ---------------- */
 
-(function renderChips() {
-  const trainMin = LEGS.reduce((sum, leg) => sum + legMinutes(leg), 0);
-  const km = LEGS.reduce((sum, leg) => sum + legKm(leg), 0);
-  const seats = LEGS.reduce((sum, leg) => sum + leg.price, 0);
+// Header chips show trip totals, or one direction's numbers while it is focused.
+function renderChips(dir) {
+  const legs = dir ? LEGS.filter((leg) => leg.dir === dir) : LEGS;
+  const trainMin = legs.reduce((sum, leg) => sum + legMinutes(leg), 0);
+  const km = legs.reduce((sum, leg) => sum + legKm(leg), 0);
+  const seats = legs.reduce((sum, leg) => sum + leg.price, 0);
+  const costChip = dir
+    ? `<b>${euro(seats)}</b> seat reservations`
+    : `<b>${euro(seats + INTERRAIL_PASS)}</b> · €${INTERRAIL_PASS} Interrail pass + ${euro(seats)} seats`;
   document.getElementById('chips').innerHTML = [
-    `<b>${LEGS.length}</b> trains`,
+    `<b>${legs.length}</b> trains`,
     `<b>${fmtDur(trainMin)}</b> on rails`,
     `≈ <b>${km.toLocaleString('en')}</b> km`,
-    `<b>${euro(seats + INTERRAIL_PASS)}</b> · €${INTERRAIL_PASS} Interrail pass + ${euro(seats)} seats`,
+    costChip,
   ].map((chip) => `<span class="chip">${chip}</span>`).join('');
-})();
+}
+renderChips();
 
 function renderDirCard(elementId, dir, title) {
   const legs = LEGS.filter((leg) => leg.dir === dir);
@@ -428,6 +433,7 @@ function clearSelection() {
   legLayers.forEach((layer) => layer.setStyle({ opacity: 0.95, weight: 4 }));
   bikeLayer.setStyle({ opacity: 0.95, weight: 3 });
   document.querySelectorAll('.dir-card').forEach((card) => card.classList.remove('faded', 'focus', 'focus-dir'));
+  renderChips();
 }
 
 // Toggles: re-clicking the selected row (or clicking the map) restores the full view.
@@ -482,6 +488,7 @@ document.querySelectorAll('.row[data-bike]').forEach((row) => {
 document.querySelectorAll('.dir-card h2[data-dir]').forEach((header) => {
   const dir = header.dataset.dir;
   header.addEventListener('click', () => toggleSelection(header, () => {
+    renderChips(dir);
     const bounds = L.latLngBounds([]);
     legLayers.forEach((layer, index) => {
       const active = LEGS[index].dir === dir;
