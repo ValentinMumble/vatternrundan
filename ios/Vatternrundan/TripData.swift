@@ -58,9 +58,20 @@ enum TripRow: Identifiable {
 }
 
 enum Selection: Equatable {
+    case direction(Direction)
     case leg(Int)
     case layover(beforeLegId: Int)
     case bike
+
+    /// Which direction a selection belongs to — used to fade the other card.
+    var owningDirection: Direction? {
+        switch self {
+        case .direction(let direction): direction
+        case .leg(let id): TripData.legs.first { $0.id == id }?.direction
+        case .layover(let beforeLegId): TripData.legs.first { $0.id == beforeLegId }?.direction
+        case .bike: .returning
+        }
+    }
 }
 
 // MARK: - Data (ported from the web app)
@@ -73,8 +84,8 @@ enum TripData {
         "Hamburg Hbf": .init(latitude: 53.5527, longitude: 10.0065),
         "Malmö C": .init(latitude: 55.6093, longitude: 13.0007),
         "Stockholm Central": .init(latitude: 59.3301, longitude: 18.0573),
-        "Offenburg": .init(latitude: 48.4766, longitude: 7.9468),
-        "Strasbourg": .init(latitude: 48.5850, longitude: 7.7349),
+        "Offenburg": .init(latitude: 48.4769, longitude: 7.9463),    // Offenburg Bahnhof
+        "Strasbourg": .init(latitude: 48.5853, longitude: 7.7344),   // Gare de Strasbourg-Ville
     ]
 
     // Via points so polylines roughly follow real rail corridors.
@@ -118,7 +129,20 @@ enum TripData {
     static let bikeFrom = "Offenburg"
     static let bikeTo = "Strasbourg"
     static let bikeKm = 26.0
+    static let bikeSpeedKmh = 25.0
+    static let bikeSetupMinutes = 15   // setting up the bike and leaving the station
     static var bikePath: [CLLocationCoordinate2D] { [stations[bikeFrom]!, stations[bikeTo]!] }
+
+    // Estimated ride at bikeSpeedKmh, departing setupMinutes after the train reaches Offenburg.
+    static var bikeRideMinutes: Int { Int((bikeKm / bikeSpeedKmh * 60).rounded()) }
+    static var bikeDeparture: Date {
+        legs.first { $0.to == bikeFrom }!.arrival.addingTimeInterval(Double(bikeSetupMinutes) * 60)
+    }
+    static var bikeArrival: Date { bikeDeparture.addingTimeInterval(Double(bikeRideMinutes) * 60) }
+    static var bikeBufferMinutes: Int {
+        let nextTrain = legs.first { $0.from == bikeTo }!.departure
+        return Int(nextTrain.timeIntervalSince(bikeArrival) / 60)
+    }
 
     // MARK: Derived
 
@@ -149,6 +173,25 @@ enum TripData {
     static func doorToDoor(for direction: Direction) -> TimeInterval {
         let legs = legs(for: direction)
         return legs.last!.arrival.timeIntervalSince(legs.first!.departure)
+    }
+
+    static func trainTime(for direction: Direction) -> TimeInterval {
+        legs(for: direction).reduce(0) { $0 + $1.duration }
+    }
+
+    static func km(for direction: Direction) -> Double {
+        legs(for: direction).reduce(0) { $0 + $1.distanceKm }
+    }
+
+    static func seatCost(for direction: Direction) -> Double {
+        legs(for: direction).reduce(0) { $0 + $1.price }
+    }
+
+    /// Coordinates to frame when focusing a direction — the bike hop rides home with the return.
+    static func coordinates(for direction: Direction) -> [CLLocationCoordinate2D] {
+        var coordinates = legs(for: direction).flatMap(\.path)
+        if direction == .returning { coordinates += bikePath }
+        return coordinates
     }
 
     static var totalTrainTime: TimeInterval { legs.reduce(0) { $0 + $1.duration } }

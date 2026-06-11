@@ -12,7 +12,7 @@ struct ContentView: View {
                 .onTapGesture { clearSelection() }
 
             VStack(spacing: 0) {
-                HeaderCard()
+                HeaderCard(selection: selection)
                 Spacer()
                 bottomCards
             }
@@ -58,7 +58,19 @@ struct ContentView: View {
 // MARK: - Header
 
 struct HeaderCard: View {
+    let selection: Selection?
+
+    /// Chips show trip totals, or one direction's numbers while it is focused.
+    private var focusedDirection: Direction? {
+        if case .direction(let direction) = selection { return direction }
+        return nil
+    }
+
     var body: some View {
+        let trainsCount = focusedDirection.map { TripData.legs(for: $0).count } ?? TripData.legs.count
+        let trainTime = focusedDirection.map { TripData.trainTime(for: $0) } ?? TripData.totalTrainTime
+        let km = focusedDirection.map { TripData.km(for: $0) } ?? TripData.totalKm
+
         VStack(alignment: .leading, spacing: 10) {
             Text("🚴 Vätternrundan · 315 km · Sat 13 · 05:00")
                 .font(.caption.weight(.semibold))
@@ -71,21 +83,16 @@ struct HeaderCard: View {
             Text("Nantes ⇄ Stockholm 🇸🇪")
                 .font(.title2.weight(.bold))
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    StatChip(bold: "\(TripData.legs.count)", rest: " trains")
-                    StatChip(bold: formatDuration(TripData.totalTrainTime), rest: " on rails")
-                    StatChip(bold: "≈ \(Int(TripData.totalKm).formatted()) km", rest: "")
-                }
-                StatChip(
-                    bold: euro(TripData.seatCost + TripData.interrailPass),
-                    rest: " · €\(Int(TripData.interrailPass)) Interrail pass + \(euro(TripData.seatCost)) seats"
-                )
+            HStack(spacing: 6) {
+                StatChip(bold: "\(trainsCount)", rest: " trains")
+                StatChip(bold: formatDuration(trainTime), rest: " on rails")
+                StatChip(bold: "≈ \(Int(km).formatted()) km", rest: "")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .glassEffect(.regular, in: .rect(cornerRadius: 28))
+        .animation(.easeInOut(duration: 0.2), value: focusedDirection)
     }
 }
 
@@ -103,6 +110,27 @@ struct StatChip: View {
     }
 }
 
+struct StatBox: View {
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value)
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+            Text(label)
+                .font(.system(size: 9.5))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.white.opacity(0.08), in: .rect(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
+    }
+}
+
 // MARK: - Direction card
 
 struct DirectionCard: View {
@@ -114,18 +142,34 @@ struct DirectionCard: View {
         direction == .outbound ? .outboundAccent : .returnAccent
     }
 
+    private var isFocused: Bool { selection?.owningDirection == direction }
+    private var isFaded: Bool { selection != nil && selection?.owningDirection != direction }
+    private var showsStats: Bool { selection == .direction(direction) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(direction.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(accent)
-                Spacer()
-                Text(formatDuration(TripData.doorToDoor(for: direction)))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            Button {
+                onSelect(.direction(direction), TripData.coordinates(for: direction))
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(direction.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(accent)
+                    Spacer()
+                    Text(formatDuration(TripData.doorToDoor(for: direction)))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(.rect)
             }
+            .buttonStyle(.plain)
             .padding(.bottom, 5)
+
+            if showsStats {
+                directionStats
+                    .padding(.bottom, 6)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             ForEach(TripData.rows(for: direction)) { row in
                 rowView(row)
@@ -135,6 +179,25 @@ struct DirectionCard: View {
         }
         .padding(14)
         .glassEffect(.regular, in: .rect(cornerRadius: 28))
+        .overlay {
+            if isFocused {
+                RoundedRectangle(cornerRadius: 28)
+                    .strokeBorder(accent.opacity(0.6), lineWidth: 1.5)
+            }
+        }
+        .opacity(isFaded ? 0.45 : 1)
+        .animation(.easeInOut(duration: 0.25), value: selection)
+    }
+
+    private var directionStats: some View {
+        let trainTime = TripData.trainTime(for: direction)
+        let waiting = TripData.doorToDoor(for: direction) - trainTime
+        return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+            StatBox(value: formatDuration(trainTime), label: "on trains")
+            StatBox(value: formatDuration(waiting), label: "waiting")
+            StatBox(value: "≈ \(Int(TripData.km(for: direction))) km", label: "distance")
+            StatBox(value: euro(TripData.seatCost(for: direction)), label: "seats")
+        }
     }
 
     @ViewBuilder
@@ -209,16 +272,23 @@ struct DirectionCard: View {
         return Button {
             onSelect(.bike, TripData.bikePath)
         } label: {
-            HStack(spacing: 8) {
-                Text("🚴")
-                    .font(.caption)
-                    .frame(width: 48, alignment: .leading)
-                Text("\(TripData.bikeFrom) → \(TripData.bikeTo)")
-                    .font(.callout)
-                Spacer(minLength: 4)
-                Text("≈ \(Int(TripData.bikeKm)) km")
-                    .font(.caption)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text("🚴")
+                        .font(.caption)
+                        .frame(width: 48, alignment: .leading)
+                    Text("\(TripData.bikeFrom) → \(TripData.bikeTo)")
+                        .font(.callout)
+                    Spacer(minLength: 4)
+                    Text("~\(formatDuration(Double(TripData.bikeRideMinutes) * 60))")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Text("+\(TripData.bikeSetupMinutes)m setup · ride \(formatTime(TripData.bikeDeparture)) → ~\(formatTime(TripData.bikeArrival)) · ≈ \(Int(TripData.bikeKm)) km @ \(Int(TripData.bikeSpeedKmh)) km/h · \(formatDuration(Double(TripData.bikeBufferMinutes) * 60)) buffer")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .padding(.leading, 56)
             }
             .foregroundStyle(Color.bikeAccent)
             .padding(.vertical, 4)

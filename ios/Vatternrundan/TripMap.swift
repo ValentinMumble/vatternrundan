@@ -59,7 +59,8 @@ struct TripMap: View {
     }
 
     private func opacity(for leg: Leg) -> Double {
-        guard selection != nil else { return 0.95 }
+        guard let selection else { return 0.95 }
+        if case .direction(let direction) = selection { return leg.direction == direction ? 0.95 : 0.12 }
         return isSelected(leg) ? 1 : 0.12
     }
 
@@ -67,6 +68,7 @@ struct TripMap: View {
         switch selection {
         case nil: 0.95
         case .bike: 1
+        case .direction(.returning): 0.95
         default: 0.12
         }
     }

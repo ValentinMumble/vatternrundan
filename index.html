@@ -135,6 +135,7 @@
   }
   .row .dt { display: none; flex-basis: 100%; font-size: 10.5px; color: var(--muted); padding-left: 48px; }
   .row.selected .dt { display: block; }
+  .row.bike .dt { display: block; } /* bike timing always visible — it's an estimate worth seeing */
   .row:hover { background: rgba(255, 255, 255, .09); }
   .row.selected { background: rgba(255, 255, 255, .16); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, .25); }
   .row.wait { color: var(--muted); font-size: 11.5px; }
@@ -225,8 +226,8 @@ const STATIONS = {
   'Hamburg Hbf':       [53.5527, 10.0065],
   'Malmö C':           [55.6093, 13.0007],
   'Stockholm Central': [59.3301, 18.0573],
-  'Offenburg':         [48.4766,  7.9468],
-  'Strasbourg':        [48.5850,  7.7349],
+  'Offenburg':         [48.4769,  7.9463],   // Offenburg Bahnhof
+  'Strasbourg':        [48.5853,  7.7344],   // Gare de Strasbourg-Ville
 };
 
 // Via points so polylines roughly follow real rail corridors.
@@ -265,7 +266,7 @@ const RACE_LOOP = [
 ];
 
 const INTERRAIL_PASS = 240;
-const BIKE_HOP = { from: 'Offenburg', to: 'Strasbourg', km: 26 };
+const BIKE_HOP = { from: 'Offenburg', to: 'Strasbourg', km: 26, speedKmh: 25, setupMin: 15 };
 
 /* ---------------- helpers ---------------- */
 
@@ -280,6 +281,9 @@ function fmtDur(min) {
   return mins === 0 ? `${hours}h` : `${hours}h${String(mins).padStart(2, '0')}`;
 }
 function fmtTime(iso) { return iso.slice(11, 16); }
+function fmtClock(dateObj) {
+  return `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+}
 function crossesMidnight(leg) { return leg.dep.slice(0, 10) !== leg.arr.slice(0, 10); }
 const shortName = (station) => station.replace(/ (Hbf|C|Central)$/, '').replace('-Midi', '');
 
@@ -364,15 +368,10 @@ function renderChips(dir) {
   const legs = dir ? LEGS.filter((leg) => leg.dir === dir) : LEGS;
   const trainMin = legs.reduce((sum, leg) => sum + legMinutes(leg), 0);
   const km = legs.reduce((sum, leg) => sum + legKm(leg), 0);
-  const seats = legs.reduce((sum, leg) => sum + leg.price, 0);
-  const costChip = dir
-    ? `<b>${euro(seats)}</b> seat reservations`
-    : `<b>${euro(seats + INTERRAIL_PASS)}</b> · €${INTERRAIL_PASS} Interrail pass + ${euro(seats)} seats`;
   document.getElementById('chips').innerHTML = [
     `<b>${legs.length}</b> trains`,
     `<b>${fmtDur(trainMin)}</b> on rails`,
     `≈ <b>${km.toLocaleString('en')}</b> km`,
-    costChip,
   ].map((chip) => `<span class="chip">${chip}</span>`).join('');
 }
 renderChips();
@@ -390,9 +389,13 @@ function renderDirCard(elementId, dir, title) {
         `<span class="tm">⏱</span><span class="rt">${fmtDur(minutesBetween(prevLeg.arr, leg.dep))} layover</span><span class="du"></span></div>`;
     } else if (prevLeg) {
       // The unbooked Rhine crossing sits between the Offenburg arrival and the Strasbourg departure.
+      const rideMin = Math.round(BIKE_HOP.km / BIKE_HOP.speedKmh * 60);
+      const bikeDep = new Date(dateOf(prevLeg.arr).getTime() + BIKE_HOP.setupMin * MS_MIN);
+      const bikeArr = new Date(bikeDep.getTime() + rideMin * MS_MIN);
+      const bufferMin = minutesBetween(prevLeg.arr, leg.dep) - BIKE_HOP.setupMin - rideMin;
       rows += `<div class="row bike" data-bike>` +
-        `<span class="tm">🚴</span><span class="rt">${BIKE_HOP.from} → ${BIKE_HOP.to}</span><span class="du">≈ ${BIKE_HOP.km} km</span>` +
-        `<span class="dt">window ${fmtTime(prevLeg.arr)} → ${fmtTime(leg.dep)} · own pace across the Rhine</span></div>`;
+        `<span class="tm">🚴</span><span class="rt">${BIKE_HOP.from} → ${BIKE_HOP.to}</span><span class="du">~${fmtDur(rideMin)}</span>` +
+        `<span class="dt">+${BIKE_HOP.setupMin}m setup · ride ${fmtClock(bikeDep)} → ~${fmtClock(bikeArr)} · ≈ ${BIKE_HOP.km} km @ ${BIKE_HOP.speedKmh} km/h · ${fmtDur(bufferMin)} buffer</span></div>`;
     }
     rows += `<div class="row" data-leg="${LEGS.indexOf(leg)}">` +
       `<span class="tm">${fmtTime(leg.dep)}</span>` +
