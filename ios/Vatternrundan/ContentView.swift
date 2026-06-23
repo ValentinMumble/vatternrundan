@@ -207,8 +207,6 @@ struct DirectionCard: View {
             legRow(leg)
         case .layover(let minutes, let beforeLeg):
             layoverRow(minutes: minutes, beforeLeg: beforeLeg)
-        case .bike:
-            bikeRow
         }
     }
 
@@ -233,7 +231,7 @@ struct DirectionCard: View {
                         .foregroundStyle(.secondary)
                 }
                 if isSelected {
-                    Text("≈ \(Int(leg.distanceKm)) km · \(euro(leg.price)) · arrives \(formatTime(leg.arrival))\(leg.crossesMidnight ? " (+1)" : "")")
+                    Text("≈ \(Int(leg.distanceKm)) km · \(leg.priceLabel) · arrives \(formatTime(leg.arrival))\(leg.crossesMidnight ? " (+1)" : "")")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .padding(.leading, 56)
@@ -261,37 +259,6 @@ struct DirectionCard: View {
             }
             .foregroundStyle(.secondary)
             .padding(.vertical, 3)
-            .padding(.horizontal, 6)
-            .background(isSelected ? .white.opacity(0.16) : .clear, in: .rect(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var bikeRow: some View {
-        let isSelected = selection == .bike
-        return Button {
-            onSelect(.bike, TripData.bikePath)
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text("🚴")
-                        .font(.caption)
-                        .frame(width: 48, alignment: .leading)
-                    Text("\(TripData.bikeFrom) → \(TripData.bikeTo)")
-                        .font(.callout)
-                    Spacer(minLength: 4)
-                    Text("~\(formatDuration(Double(TripData.bikeRideMinutes) * 60))")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                Text("+\(TripData.bikeSetupMinutes)m setup · ride \(formatTime(TripData.bikeDeparture)) → ~\(formatTime(TripData.bikeArrival)) · ≈ \(Int(TripData.bikeKm)) km @ \(Int(TripData.bikeSpeedKmh)) km/h · \(formatDuration(Double(TripData.bikeBufferMinutes) * 60)) buffer")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 56)
-            }
-            .foregroundStyle(Color.bikeAccent)
-            .padding(.vertical, 4)
             .padding(.horizontal, 6)
             .background(isSelected ? .white.opacity(0.16) : .clear, in: .rect(cornerRadius: 10))
         }

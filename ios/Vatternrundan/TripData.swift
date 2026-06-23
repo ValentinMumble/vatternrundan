@@ -41,18 +41,19 @@ struct Leg: Identifiable, Equatable {
         let points = path.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
         return zip(points, points.dropFirst()).reduce(0) { $0 + $1.0.distance(from: $1.1) } / 1000
     }
+
+    /// Regional hops covered by the Interrail pass carry no seat reservation.
+    var priceLabel: String { price > 0 ? euro(price) : "Interrail pass" }
 }
 
 enum TripRow: Identifiable {
     case leg(Leg)
     case layover(minutes: Int, beforeLeg: Leg)
-    case bike
 
     var id: String {
         switch self {
         case .leg(let leg): "leg-\(leg.id)"
         case .layover(_, let leg): "layover-\(leg.id)"
-        case .bike: "bike"
         }
     }
 }
@@ -61,7 +62,6 @@ enum Selection: Equatable {
     case direction(Direction)
     case leg(Int)
     case layover(beforeLegId: Int)
-    case bike
 
     /// Which direction a selection belongs to — used to fade the other card.
     var owningDirection: Direction? {
@@ -69,7 +69,6 @@ enum Selection: Equatable {
         case .direction(let direction): direction
         case .leg(let id): TripData.legs.first { $0.id == id }?.direction
         case .layover(let beforeLegId): TripData.legs.first { $0.id == beforeLegId }?.direction
-        case .bike: .returning
         }
     }
 }
@@ -111,7 +110,10 @@ enum TripData {
         Leg(id: 6, direction: .returning, from: "Hamburg Hbf", to: "Offenburg",
             departure: date("2026-06-23T07:44"), arrival: date("2026-06-23T13:58"), price: 8.00,
             via: coords([(52.38, 9.74), (50.107, 8.66), (49.01, 8.40)])),           // Hannover · Frankfurt · Karlsruhe
-        Leg(id: 7, direction: .returning, from: "Strasbourg", to: "Nantes",
+        Leg(id: 7, direction: .returning, from: "Offenburg", to: "Strasbourg",
+            departure: date("2026-06-23T14:35"), arrival: date("2026-06-23T15:04"), price: 0,
+            via: []),                                                               // regional TER across the Rhine, Interrail (no reservation)
+        Leg(id: 8, direction: .returning, from: "Strasbourg", to: "Nantes",
             departure: date("2026-06-23T17:01"), arrival: date("2026-06-23T22:23"), price: 12.00,
             via: coords([(48.73, 2.26), (47.99, 0.19), (47.46, -0.55)])),           // Massy · Le Mans · Angers
     ]
@@ -125,44 +127,20 @@ enum TripData {
 
     static let motala = CLLocationCoordinate2D(latitude: 58.537, longitude: 15.036)
 
-    static let interrailPass = 240.0
-    static let bikeFrom = "Offenburg"
-    static let bikeTo = "Strasbourg"
-    static let bikeKm = 26.0
-    static let bikeSpeedKmh = 25.0
-    static let bikeSetupMinutes = 15   // setting up the bike and leaving the station
-    static var bikePath: [CLLocationCoordinate2D] { [stations[bikeFrom]!, stations[bikeTo]!] }
-
-    // Estimated ride at bikeSpeedKmh, departing setupMinutes after the train reaches Offenburg.
-    static var bikeRideMinutes: Int { Int((bikeKm / bikeSpeedKmh * 60).rounded()) }
-    static var bikeDeparture: Date {
-        legs.first { $0.to == bikeFrom }!.arrival.addingTimeInterval(Double(bikeSetupMinutes) * 60)
-    }
-    static var bikeArrival: Date { bikeDeparture.addingTimeInterval(Double(bikeRideMinutes) * 60) }
-    static var bikeBufferMinutes: Int {
-        let nextTrain = legs.first { $0.from == bikeTo }!.departure
-        return Int(nextTrain.timeIntervalSince(bikeArrival) / 60)
-    }
-
     // MARK: Derived
 
     static func legs(for direction: Direction) -> [Leg] {
         legs.filter { $0.direction == direction }
     }
 
-    /// Legs interleaved with layovers; the unbooked Rhine crossing shows up
-    /// as a bike row wherever consecutive legs don't share a station.
+    /// Legs interleaved with the layover between consecutive trains.
     static func rows(for direction: Direction) -> [TripRow] {
         var rows: [TripRow] = []
         var previous: Leg?
         for leg in legs(for: direction) {
-            if let previous {
-                if previous.to == leg.from {
-                    let minutes = Int(leg.departure.timeIntervalSince(previous.arrival) / 60)
-                    rows.append(.layover(minutes: minutes, beforeLeg: leg))
-                } else {
-                    rows.append(.bike)
-                }
+            if let previous, previous.to == leg.from {
+                let minutes = Int(leg.departure.timeIntervalSince(previous.arrival) / 60)
+                rows.append(.layover(minutes: minutes, beforeLeg: leg))
             }
             rows.append(.leg(leg))
             previous = leg
@@ -187,11 +165,9 @@ enum TripData {
         legs(for: direction).reduce(0) { $0 + $1.price }
     }
 
-    /// Coordinates to frame when focusing a direction — the bike hop rides home with the return.
+    /// Coordinates to frame when focusing a direction.
     static func coordinates(for direction: Direction) -> [CLLocationCoordinate2D] {
-        var coordinates = legs(for: direction).flatMap(\.path)
-        if direction == .returning { coordinates += bikePath }
-        return coordinates
+        legs(for: direction).flatMap(\.path)
     }
 
     static var totalTrainTime: TimeInterval { legs.reduce(0) { $0 + $1.duration } }

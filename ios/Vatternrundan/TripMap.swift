@@ -20,12 +20,6 @@ struct TripMap: View {
                     )
             }
 
-            MapPolyline(coordinates: TripData.bikePath)
-                .stroke(
-                    Color.bikeAccent.opacity(bikeOpacity),
-                    style: StrokeStyle(lineWidth: selection == .bike ? 5 : 3, lineCap: .round, dash: [4, 6])
-                )
-
             MapPolyline(coordinates: TripData.raceLoop)
                 .stroke(
                     Color.raceAccent.opacity(selection == nil ? 0.9 : 0.25),
@@ -63,15 +57,6 @@ struct TripMap: View {
         if case .direction(let direction) = selection { return leg.direction == direction ? 0.95 : 0.12 }
         return isSelected(leg) ? 1 : 0.12
     }
-
-    private var bikeOpacity: Double {
-        switch selection {
-        case nil: 0.95
-        case .bike: 1
-        case .direction(.returning): 0.95
-        default: 0.12
-        }
-    }
 }
 
 extension MKCoordinateRegion {
@@ -100,6 +85,5 @@ extension MKCoordinateRegion {
 extension Color {
     static let outboundAccent = Color(red: 0.176, green: 0.831, blue: 0.749)  // #2dd4bf
     static let returnAccent = Color(red: 0.984, green: 0.573, blue: 0.235)    // #fb923c
-    static let bikeAccent = Color(red: 0.290, green: 0.871, blue: 0.502)      // #4ade80
     static let raceAccent = Color(red: 0.980, green: 0.800, blue: 0.082)      // #facc15
 }

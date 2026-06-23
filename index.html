@@ -15,7 +15,6 @@
     --out: #2dd4bf;
     --ret: #fb923c;
     --race: #facc15;
-    --bike: #4ade80;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
@@ -135,7 +134,6 @@
   }
   .row .dt { display: none; flex-basis: 100%; font-size: 10.5px; color: var(--muted); padding-left: 48px; }
   .row.selected .dt { display: block; }
-  .row.bike .dt { display: block; } /* bike timing always visible — it's an estimate worth seeing */
   .row:hover { background: rgba(255, 255, 255, .09); }
   .row.selected { background: rgba(255, 255, 255, .16); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, .25); }
   .row.wait { color: var(--muted); font-size: 11.5px; }
@@ -143,7 +141,6 @@
   .row .tm { font-weight: 800; font-variant-numeric: tabular-nums; width: 40px; flex: none; }
   .row .rt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .row .du { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; flex: none; }
-  .row.bike { color: var(--bike); }
   .row.arr { color: var(--muted); cursor: default; font-size: 11.5px; }
   .row.arr:hover { background: none; }
   .row.arr .tm { font-weight: 600; }
@@ -253,6 +250,9 @@ const LEGS = [
   { dir: 'ret', from: 'Hamburg Hbf', to: 'Offenburg',
     dep: '2026-06-23T07:44', arr: '2026-06-23T13:58', price: 8.00,
     via: [[52.38, 9.74], [50.107, 8.66], [49.01, 8.40]] },                     // Hannover · Frankfurt · Karlsruhe
+  { dir: 'ret', from: 'Offenburg', to: 'Strasbourg',
+    dep: '2026-06-23T14:35', arr: '2026-06-23T15:04', price: 0,
+    via: [] },                                                                 // regional TER across the Rhine, Interrail (no reservation)
   { dir: 'ret', from: 'Strasbourg', to: 'Nantes',
     dep: '2026-06-23T17:01', arr: '2026-06-23T22:23', price: 12.00,
     via: [[48.73, 2.26], [47.99, 0.19], [47.46, -0.55]] },                     // Massy · Le Mans · Angers
@@ -264,9 +264,6 @@ const RACE_LOOP = [
   [57.781, 14.156], [57.910, 14.070], [58.170, 14.137], [58.300, 14.290],
   [58.540, 14.510], [58.879, 14.902], [58.700, 15.050], [58.537, 15.036],
 ];
-
-const INTERRAIL_PASS = 240;
-const BIKE_HOP = { from: 'Offenburg', to: 'Strasbourg', km: 26, speedKmh: 25, setupMin: 15 };
 
 /* ---------------- helpers ---------------- */
 
@@ -281,10 +278,8 @@ function fmtDur(min) {
   return mins === 0 ? `${hours}h` : `${hours}h${String(mins).padStart(2, '0')}`;
 }
 function fmtTime(iso) { return iso.slice(11, 16); }
-function fmtClock(dateObj) {
-  return `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
-}
 function crossesMidnight(leg) { return leg.dep.slice(0, 10) !== leg.arr.slice(0, 10); }
+const priceLabel = (leg) => leg.price > 0 ? euro(leg.price) : 'Interrail pass';
 const shortName = (station) => station.replace(/ (Hbf|C|Central)$/, '').replace('-Midi', '');
 
 function haversineKm(a, b) {
@@ -326,7 +321,7 @@ for (const leg of LEGS) {
   layer.bindPopup(
     `<b>${leg.from} → ${leg.to}</b><br>` +
     `${fmtTime(leg.dep)} → ${fmtTime(leg.arr)}${crossesMidnight(leg) ? ' (+1)' : ''} · ${fmtDur(legMinutes(leg))}<br>` +
-    `≈ ${legKm(leg)} km · ${euro(leg.price)}`
+    `≈ ${legKm(leg)} km · ${priceLabel(leg)}`
   );
   legLayers.push(layer);
 }
@@ -336,10 +331,6 @@ for (const [name, coords] of Object.entries(STATIONS)) {
     icon: L.divIcon({ className: 'station-dot', html: '<span></span>', iconSize: [9, 9], iconAnchor: [5, 5] }),
   }).addTo(map).bindTooltip(name, { direction: 'top', offset: [0, -6] });
 }
-
-const bikeLayer = L.polyline([STATIONS[BIKE_HOP.from], STATIONS[BIKE_HOP.to]], {
-  color: '#4ade80', weight: 3, dashArray: '4 6', opacity: 0.95,
-}).addTo(map).bindPopup(`<b>${BIKE_HOP.from} → ${BIKE_HOP.to}</b><br>🚴 by bike · ≈ ${BIKE_HOP.km} km across the Rhine`);
 
 L.polyline(RACE_LOOP, { color: '#facc15', weight: 3, dashArray: '6 7', opacity: 0.9 }).addTo(map)
   .bindPopup('<b>Vätternrundan</b><br>315 km around Lake Vättern 🚴<br>Sat 13 June · 05:00 start');
@@ -387,21 +378,12 @@ function renderDirCard(elementId, dir, title) {
     if (prevLeg && prevLeg.to === leg.from) {
       rows += `<div class="row wait" data-wait="${leg.from}" data-dur="${fmtDur(minutesBetween(prevLeg.arr, leg.dep))}">` +
         `<span class="tm">⏱</span><span class="rt">${fmtDur(minutesBetween(prevLeg.arr, leg.dep))} layover</span><span class="du"></span></div>`;
-    } else if (prevLeg) {
-      // The unbooked Rhine crossing sits between the Offenburg arrival and the Strasbourg departure.
-      const rideMin = Math.round(BIKE_HOP.km / BIKE_HOP.speedKmh * 60);
-      const bikeDep = new Date(dateOf(prevLeg.arr).getTime() + BIKE_HOP.setupMin * MS_MIN);
-      const bikeArr = new Date(bikeDep.getTime() + rideMin * MS_MIN);
-      const bufferMin = minutesBetween(prevLeg.arr, leg.dep) - BIKE_HOP.setupMin - rideMin;
-      rows += `<div class="row bike" data-bike>` +
-        `<span class="tm">🚴</span><span class="rt">${BIKE_HOP.from} → ${BIKE_HOP.to}</span><span class="du">~${fmtDur(rideMin)}</span>` +
-        `<span class="dt">+${BIKE_HOP.setupMin}m setup · ride ${fmtClock(bikeDep)} → ~${fmtClock(bikeArr)} · ≈ ${BIKE_HOP.km} km @ ${BIKE_HOP.speedKmh} km/h · ${fmtDur(bufferMin)} buffer</span></div>`;
     }
     rows += `<div class="row" data-leg="${LEGS.indexOf(leg)}">` +
       `<span class="tm">${fmtTime(leg.dep)}</span>` +
       `<span class="rt">${shortName(leg.from)} → ${shortName(leg.to)}${crossesMidnight(leg) ? ' 🌙' : ''}</span>` +
       `<span class="du">${fmtDur(legMinutes(leg))}</span>` +
-      `<span class="dt">≈ ${legKm(leg)} km · ${euro(leg.price)} · arrives ${fmtTime(leg.arr)}${crossesMidnight(leg) ? ' (+1)' : ''}</span></div>`;
+      `<span class="dt">≈ ${legKm(leg)} km · ${priceLabel(leg)} · arrives ${fmtTime(leg.arr)}${crossesMidnight(leg) ? ' (+1)' : ''}</span></div>`;
     prevLeg = leg;
   }
   rows += `<div class="row arr"><span class="tm">${fmtTime(lastLeg.arr)}</span>` +
@@ -434,7 +416,6 @@ function clearSelection() {
   selectedRow = null;
   map.closePopup();
   legLayers.forEach((layer) => layer.setStyle({ opacity: 0.95, weight: 4 }));
-  bikeLayer.setStyle({ opacity: 0.95, weight: 3 });
   document.querySelectorAll('.dir-card').forEach((card) => card.classList.remove('faded', 'focus', 'focus-dir'));
   renderChips();
 }
@@ -454,7 +435,6 @@ function toggleSelection(row, apply) {
 
 function dimAll() {
   legLayers.forEach((layer) => layer.setStyle({ opacity: 0.12, weight: 3 }));
-  bikeLayer.setStyle({ opacity: 0.12 });
 }
 
 document.querySelectorAll('.row[data-leg]').forEach((row) => {
@@ -478,16 +458,7 @@ document.querySelectorAll('.row[data-wait]').forEach((row) => {
   }));
 });
 
-document.querySelectorAll('.row[data-bike]').forEach((row) => {
-  row.addEventListener('click', () => toggleSelection(row, () => {
-    dimAll();
-    bikeLayer.setStyle({ opacity: 1, weight: 5 });
-    fitWithHud(bikeLayer.getBounds(), 10);
-    bikeLayer.openPopup();
-  }));
-});
-
-// Clicking a card header focuses the whole direction (the bike hop belongs to the return).
+// Clicking a card header focuses that whole direction.
 document.querySelectorAll('.dir-card h2[data-dir]').forEach((header) => {
   const dir = header.dataset.dir;
   header.addEventListener('click', () => toggleSelection(header, () => {
@@ -498,8 +469,6 @@ document.querySelectorAll('.dir-card h2[data-dir]').forEach((header) => {
       layer.setStyle({ opacity: active ? 0.95 : 0.12, weight: 4 });
       if (active) bounds.extend(layer.getBounds());
     });
-    bikeLayer.setStyle({ opacity: dir === 'ret' ? 0.95 : 0.12 });
-    if (dir === 'ret') bounds.extend(bikeLayer.getBounds());
     fitWithHud(bounds);
   }));
 });
