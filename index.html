@@ -304,10 +304,13 @@ const euro = (value) => `€${value.toFixed(2)}`;
 /* ---------------- map ---------------- */
 
 const map = L.map('map', { scrollWheelZoom: true, zoomControl: false });
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-  subdomains: 'abcd', maxZoom: 18,
+// Esri dark gray canvas (keyless; CARTO basemaps now require an API key)
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
+L.tileLayer(`${ESRI}/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
+  attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin, &copy; OpenStreetMap contributors',
+  maxZoom: 16,
 }).addTo(map);
+L.tileLayer(`${ESRI}/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16 }).addTo(map);
 
 const DIR_COLOR = { out: '#2dd4bf', ret: '#fb923c' };
 const legLayers = [];
